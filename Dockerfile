@@ -1,44 +1,46 @@
 #
-# Ubuntu 14.04 with activiti Dockerfile
+# Tomcat Alpine with activiti Dockerfile
 #
-# Pull base image.
-### http://blog.docker.com/2015/03/updates-available-to-popular-repos-update-your-images/
-# dockerfile/java renamed to java
 ### 
-FROM openjdk:7
-MAINTAINER Frank Wang "eternnoir@gmail.com"
+FROM tomcat:8.5.9-jre8-alpine
+MAINTAINER Kent Johnson "kentoj@gmail.com"
 
 EXPOSE 8080
 
-ENV TOMCAT_VERSION 8.0.38
-ENV ACTIVITI_VERSION 5.21.0
-ENV MYSQL_CONNECTOR_JAVA_VERSION 5.1.40
+ENV TOMCAT_HOME=/usr/local/tomcat
+ENV ACTIVITI_VERSION 6.0.0.Beta4
+ENV POSTGRESQL_JDBC_DRIVER_VERSION 9.4.1212
+ENV ACTIVITI_URL=https://github.com/Activiti/Activiti/releases/download/activiti
+ENV POSTGRESQL_URL=https://jdbc.postgresql.org/download/postgresql
+ENV ACTIVITI_WORKDIR=/opt/activiti
 
-# Tomcat
-RUN wget http://archive.apache.org/dist/tomcat/tomcat-8/v${TOMCAT_VERSION}/bin/apache-tomcat-${TOMCAT_VERSION}.tar.gz -O /tmp/catalina.tar.gz && \
-	tar xzf /tmp/catalina.tar.gz -C /opt && \
-	ln -s /opt/apache-tomcat-${TOMCAT_VERSION} /opt/tomcat && \
-	rm /tmp/catalina.tar.gz && \
-	rm -rf /opt/tomcat/webapps/examples && \
-	rm -rf /opt/tomcat/webapps/docs
 
 # To install jar files first we need to deploy war files manually
-RUN wget https://github.com/Activiti/Activiti/releases/download/activiti-${ACTIVITI_VERSION}/activiti-${ACTIVITI_VERSION}.zip -O /tmp/activiti.zip && \
- 	unzip /tmp/activiti.zip -d /opt/activiti && \
-	unzip /opt/activiti/activiti-${ACTIVITI_VERSION}/wars/activiti-explorer.war -d /opt/tomcat/webapps/activiti-explorer && \
-	unzip /opt/activiti/activiti-${ACTIVITI_VERSION}/wars/activiti-rest.war -d /opt/tomcat/webapps/activiti-rest && \
+RUN apk update && \
+	apk add ca-certificates && \
+	update-ca-certificates && \
+	apk add openssl && \
+	mkdir -p ${ACTIVITI_WORKDIR}
+
+
+RUN	wget ${ACTIVITI_URL}-${ACTIVITI_VERSION}/activiti-${ACTIVITI_VERSION}.zip -O /tmp/activiti.zip
+
+RUN unzip /tmp/activiti.zip -d ${ACTIVITI_WORKDIR} && \
+    mkdir ${TOMCAT_HOME}/webapps/activiti-app && \
+    mkdir ${TOMCAT_HOME}/webapps/activiti-rest && \
+	unzip ${ACTIVITI_WORKDIR}/activiti-${ACTIVITI_VERSION}/wars/activiti-app.war -d  ${TOMCAT_HOME}/webapps/activiti-app && \
+	unzip ${ACTIVITI_WORKDIR}/activiti-${ACTIVITI_VERSION}/wars/activiti-rest.war -d ${TOMCAT_HOME}/webapps/activiti-rest && \
 	rm -f /tmp/activiti.zip
 
-# Add mysql connector to application
-RUN wget http://dev.mysql.com/get/Downloads/Connector-J/mysql-connector-java-${MYSQL_CONNECTOR_JAVA_VERSION}.zip -O /tmp/mysql-connector-java.zip && \
-	unzip /tmp/mysql-connector-java.zip -d /tmp && \
-	cp /tmp/mysql-connector-java-${MYSQL_CONNECTOR_JAVA_VERSION}/mysql-connector-java-${MYSQL_CONNECTOR_JAVA_VERSION}-bin.jar /opt/tomcat/webapps/activiti-rest/WEB-INF/lib/ && \
-	cp /tmp/mysql-connector-java-${MYSQL_CONNECTOR_JAVA_VERSION}/mysql-connector-java-${MYSQL_CONNECTOR_JAVA_VERSION}-bin.jar /opt/tomcat/webapps/activiti-explorer/WEB-INF/lib/ && \
-	rm -rf /tmp/mysql-connector-java.zip /tmp/mysql-connector-java-${MYSQL_CONNECTOR_JAVA_VERSION}
+# Add PostgreSQL connector to application
+RUN wget ${POSTGRESQL_URL}-${POSTGRESQL_JDBC_DRIVER_VERSION}.jar -O /tmp/postgresql-${POSTGRESQL_JDBC_DRIVER_VERSION}.jar && \
+	cp /tmp/postgresql-${POSTGRESQL_JDBC_DRIVER_VERSION}.jar ${TOMCAT_HOME}/webapps/activiti-app/WEB-INF/lib/ && \
+	cp /tmp/postgresql-${POSTGRESQL_JDBC_DRIVER_VERSION}.jar ${TOMCAT_HOME}/webapps/activiti-rest/WEB-INF/lib/ && \
+	rm -rf /tmp/postgresql-${POSTGRESQL_JDBC_DRIVER_VERSION}.jar 
 
 # Add roles
 ADD assets /assets
-RUN cp /assets/config/tomcat/tomcat-users.xml /opt/apache-tomcat-${TOMCAT_VERSION}/conf/
+RUN cp /assets/config/tomcat/tomcat-users.xml ${TOMCAT_HOME}/conf/
 
 CMD ["/assets/init"]
 

@@ -1,3 +1,5 @@
+# Activiti in Docker
+
 # Table of Contents
 - [Introduction](#introduction)
     - [Version](#version)
@@ -14,26 +16,28 @@ Dockerfile to build an [Activiti BPM](#http://www.activiti.org/) container image
 
 ## Version
 
-Current Version: 5.19.0
+Current Version: 6.0.0.Beta4
 
 # Installation
-
-Pull the latest version of the image from the docker index. This is the recommended method of installation as it is easier to update image in the future. These builds are performed by the **Docker Trusted Build** service.
+1. Create the container network with `network-create.sh`.
+2. Set up a DB container and set its properties in assets/db.properties
+3. Set this container up
+  - Pull the latest version of the image from the docker index. This is the recommended method of installation as it is easier to update image in the future. These builds are performed by the **Docker Trusted Build** service.
 
 ```bash
-docker pull eternnoir/activiti:latest
+docker pull kentoj/activiti:latest
 ```
 
 Since version `latest`, the image builds are being tagged. You can now pull a particular version of activiti by specifying the version number. For example,
 
 ```bash
-docker pull eternnoir/activiti:5.16.4
+docker pull kentoj/activiti:6.0.0.Beta4
 ```
 
 Alternately you can build the image yourself.
 
 ```bash
-git clone https://github.com/eternnoir/activiti.git
+git clone https://github.com/kentoj/activiti.git
 cd activiti
 docker build --tag="$USER/activiti" .
 ```
@@ -62,75 +66,28 @@ You should now have the Activiti application up and ready for testing. If you wa
 
 ## Database
 
-Activiti uses a database backend to store its data. You can configure this image to use MySQL.
+Activiti uses a database backend to store its data. The main difference between this image and the eternoir/activiti image is that it does not automatically set up a DB container.
 
-### MySQL
+### PostgreSQL
 
-#### External MySQL Server
+#### External PostgreSQL Server
 
-The image can be configured to use an external MySQL database instead of starting a MySQL server internally. The database configuration should be specified using environment variables while starting the Activiti image.
+The image is configured to use an external PostgreSQL. To create the volume and the container needed for the PostgreSQL container
+run the `postgres-container-create` script. This depends on the `network-create.sh` script.
 
 Before you start the Activiti image create user and database for activiti.
 
-```sql
-CREATE USER 'activiti'@'%.%.%.%' IDENTIFIED BY 'password';
-CREATE DATABASE IF NOT EXISTS `activiti_production` DEFAULT CHARACTER SET `utf8` COLLATE `utf8_unicode_ci`;
-GRANT ALL PRIVILEGES ON `activiti_production`.* TO 'activiti'@'%.%.%.%';
-```
+
 
 We are now ready to start the Activiti application.
 
-*Assuming that the mysql server host is 192.0.2.1*
+run the `docker-run.sh` command.
 
-```bash
-docker run --name=activiti -d \
-  -e 'DB_HOST=192.0.2.1’ -e 'DB_NAME=activiti_production' -e 'DB_USER=activiti’ -e 'DB_PASS=password' \
-eternnoir/activiti:latest
-```
+#### Linking to PostgreSQL Container
 
-#### Linking to MySQL Container
+The containers are visible to each other through the Docker network called my-activiti-network
 
-You can link this image with a mysql container for the database requirements. The alias of the mysql server container should be set to **mysql** while linking with the activiti image.
 
-If a mysql container is linked, only the `DB_TYPE`, `DB_HOST` and `DB_PORT` settings are automatically retrieved using the linkage. You may still need to set other database connection parameters such as the `DB_NAME`, `DB_USER`, `DB_PASS` and so on.
-
-To illustrate linking with a mysql container, we will use the [sameersbn/mysql](https://github.com/sameersbn/docker-mysql) image. When using docker-mysql in production you should mount a volume for the mysql data store. Please refer the [README](https://github.com/sameersbn/docker-mysql/blob/master/README.md) of docker-mysql for details.
-
-First, lets pull the mysql image from the docker index.
-
-```bash
-docker pull sameersbn/mysql:latest
-```
-
-For data persistence lets create a store for the mysql and start the container.
-
-SELinux users are also required to change the security context of the mount point so that it plays nicely with selinux.
-
-```bash
-mkdir -p /opt/mysql/data
-sudo chcon -Rt svirt_sandbox_file_t /opt/mysql/data
-```
-
-The run command looks like this.
-
-```bash
-docker run --name=mysql -d \
-  -e 'DB_NAME=activiti_production' -e 'DB_USER=activiti' -e 'DB_PASS=password' \
-	-v /opt/mysql/data:/var/lib/mysql \
-	sameersbn/mysql:latest
-```
-
-The above command will create a database named `activiti_production` and also create a user named `activiti` with the password `activiti` with full/remote access to the `activiti_production` database.
-
-We are now ready to start the Activiti application.
-
-```bash
-docker run --name=activiti -d --link mysql:mysql \
-  eternnoir/activiti:latest
-```
-
-The image will automatically fetch the `DB_NAME`, `DB_USER` and `DB_PASS` variables from the mysql container using the magic of docker links and works with the following images:
- - [sameersbn/mysql](https://registry.hub.docker.com/u/sameersbn/mysql/)
 
 ### Available Configuration Parameters
 
@@ -141,10 +98,22 @@ Below is the complete list of available options that can be used to customize yo
 - **TOMCAT_ADMIN_USER**: Tomcat admin user name. Defaults to `admin`.
 - **TOMCAT_ADMIN_PASSWORD**: Tomcat admin user password. Defaults to `admin`.
 - **DB_HOST**: The database server hostname. Defaults to ``.
-- **DB_PORT**: The database server port. Defaults to `3306`.
+- **DB_PORT**: The database server port. Defaults to `5432`.
 - **DB_NAME**: The database database name. Defaults to ``.
 - **DB_USER**: The database database user. Defaults to ``.
 - **DB_PASS**: The database database password. Defaults to ``.
+
+
+# Administration
+Add the following records into the database to enable an admin account:
+
+```
+INSERT INTO public.act_id_group (id_, rev_, name_, type_) VALUES ('ROLE_ADMIN', 1, 'Superusers', 'security-role');
+INSERT INTO public.act_id_user (id_, rev_, first_, last_, email_, pwd_, picture_id_) VALUES ('admin', 1, 'null', 'Administrator', 'admin@activiti.example.com', 'test', null);
+INSERT INTO public.act_id_membership (user_id_, group_id_) VALUES ('admin', 'ROLE_ADMIN');
+```
+
+
 
 # Maintenance
 
@@ -163,7 +132,7 @@ docker run --rm -v /usr/local/bin:/target jpetazzo/nsenter
 Now you can access the container shell using the command
 
 ```bash
-sudo docker-enter activiti
+sudo docker-enter my_activiti
 ```
 
 For more information refer https://github.com/jpetazzo/nsenter
@@ -176,9 +145,11 @@ TODO
 
 # References
 
+* https://github.com/eternnoir/activiti
 * http://activiti.org/
 * http://github.com/Activiti/Activiti
 * http://tomcat.apache.org/
-* http://dev.mysql.com/downloads/connector/j/5.1.html
+* https://hub.docker.com/_/postgres/
 * https://github.com/jpetazzo/nsenter
 * https://jpetazzo.github.io/2014/03/23/lxc-attach-nsinit-nsenter-docker-0-9/
+
